@@ -3,47 +3,59 @@ Convert DomainNet (https://ai.bu.edu/M3SDA/) to DomainNet126
 See paper: Semi-supervised Domain Adaptation via Minimax Entropy
 """
 
+from pathlib import Path
+from typing import List, Tuple
 
-def parse_txt(s):
+
+def parse_txt(line: str) -> Tuple[str, str, str, int]:
     """
-    parse string like clipart/rabbit/clipart_236_000037.jpg 91
+    Parses a line like: clipart/rabbit/clipart_236_000037.jpg 91
+    Returns: domain, class_name, image_name, class_index
     """
-    s = s.strip()
-    prefix,class_index = s.split(" ")
+    prefix, class_index = line.strip().split(" ")
     class_index = int(class_index)
-    domain,class_name,img_name = prefix.split("/")
-    return domain,class_name,img_name,class_index
+    domain, class_name, image_name = prefix.split("/")
+    return domain, class_name, image_name, class_index
 
 
-def read_txt(txt_file:str):
-    with open(txt_file,"r") as f:
-        lines = f.readlines()
-    return lines
+def read_txt(txt_file: str) -> List[str]:
+    with open(txt_file, "r") as f:
+        return [line.strip() for line in f if line.strip()]
 
 
 if __name__ == "__main__":
-    import os
-    import shutil
     import argparse
     from tqdm import tqdm
+    import shutil
 
-    parser = argparse.ArgumentParser(description="convert")
-    parser.add_argument("--raw_data_path", type=str,default="./image_list")
-    parser.add_argument("--output_path",type=str,default="./")
+    parser = argparse.ArgumentParser(description="Convert DomainNet to DomainNet126.")
+    parser.add_argument("--raw_data_path", type=str, default="./image_list", help="Path to raw image folders.")
+    parser.add_argument("--output_path", type=str, default="./", help="Output root directory.")
     args = parser.parse_args()
-    
-    output_domain_list = ["clipart","painting","real","sketch"]
 
-    for domain in output_domain_list:
-        txt_file_path = f"./{domain}_list.txt"
-        image_list = read_txt(txt_file_path)
-        image_list = [parse_txt(s) for s in image_list]
-        
-        # copy file to output path
-        output_path = f"{args.output_path}/{domain}"
-        for image in tqdm(image_list):
-            _class,_img = image[1],image[2]
-            raw_path = f"{args.raw_data_path}/{domain}/{_class}/{_img}"
-            target_path = f"{output_path}/{_class}"
-            os.makedirs(target_path,exist_ok=True)
-            shutil.copy2(raw_path,f"{target_path}/{_img}")
+    output_domains = ["clipart", "painting", "real", "sketch"]
+
+    for domain in output_domains:
+        txt_path = Path(f"./{domain}_list.txt")
+        if not txt_path.exists():
+            print(f"[WARNING] File not found: {txt_path}")
+            continue
+
+        output_base = Path(args.output_path) / domain
+        raw_base = Path(args.raw_data_path) / domain
+
+        lines = read_txt(str(txt_path))
+        parsed = [parse_txt(line) for line in lines]
+
+        for domain_name, class_name, image_name, _ in tqdm(parsed, desc=f"Copying {domain}"):
+            src = raw_base / class_name / image_name
+            dest_dir = output_base / class_name
+            dest = dest_dir / image_name
+
+            try:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest)
+            except FileNotFoundError:
+                print(f"[ERROR] File not found: {src}")
+            except Exception as e:
+                print(f"[ERROR] Failed to copy {src} to {dest}: {e}")
